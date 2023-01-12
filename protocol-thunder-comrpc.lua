@@ -33,51 +33,11 @@ G_IMPLEMENTATIONS = {}
 G_PROCESSES = { [THUNDER_COM_PORT] = "WPEFramework" }
 G_RESPONSES = {}
 G_REQUESTS = {}
+G_PARAMS = {}
 G_CALLSTACK = {}
 G_CALL_LINES = {}
 G_SIGNATURES = {}
 G_TIMESTAMPS = {}
-
--- Protocol fields
--- Commons
-f_source_process = ProtoField.string("thundercomrpc.source_process", "Source process", base.ASCII)
-f_dest_process = ProtoField.string("thundercomrpc.dest_process", "Destination process", base.ASCII)
-f_frame_request = ProtoField.framenum("thundercomrpc.frame_request", "Request", base.NONE, frametype.REQUEST)
-f_frame_response = ProtoField.framenum("thundercomrpc.frame_response", "Response", base.NONE, frametype.RESPONSE)
-f_frame_length = ProtoField.uint32("thundercomrpc.frame_length", "Frame size", base.DEC)
-f_command = ProtoField.uint32("thundercomrpc.command", "Command", base.HEX)
-f_direction = ProtoField.uint8("thundercomrpc.direction", "Direction", base.DEC, { [DIRECTION_INBOUND] = "Return", [DIRECTION_OUTBOUND] = "Call" }, 0x1)
-f_label = ProtoField.uint32("thundercomrpc.label", "Label", base.DEC, { [LABEL_ANNOUNCE] = "Announce", [LABEL_INVOKE] = "Invoke" }, 0xFFFFFFFE)
-f_instance = ProtoField.uint32("thundercomrpc.instance", "Instance", base.HEX)
-f_instance_tag = ProtoField.string("thundercomrpc.instance_tag", "Instance tag", base.ASCII)
-f_interface = ProtoField.uint32("thundercomrpc.interface", "Interface", base.HEX, INTERFACES)
-f_payload_size = ProtoField.uint32("thundercomrpc.payload_size", "Payload size", base.DEC)
--- Announce only
-f_process_id = ProtoField.uint32("thundercomrpc.announce.id", "ID", base.DEC)
-f_exchange_id = ProtoField.uint32("thundercomrpc.announce.exchangeid", "Exchange ID", base.HEX)
-f_version = ProtoField.uint32("thundercomrpc.announce.version", "Version", base.DEC)
-f_class = ProtoField.stringz("thundercomrpc.announce.class", "Class", base.ASCII)
-f_kind = ProtoField.uint8("thundercomrpc.announce.kind", "Kind", base.DEC, { [0] = "Acquire", [1] = "Offer", [2] = "Revoke", [3] = "Request" } )
-f_sequence = ProtoField.uint8("thundercomrpc.announce.sequence", "Sequence", base.DEC)
-f_settings = ProtoField.string("thundercomrpc.announce.settings", "Settings", base.ASCII)
--- Invoke only
-f_method = ProtoField.uint8("thundercomrpc.invoke.method", "Method", base.DEC)
-f_method_text = ProtoField.string("thundercomrpc.invoke.method_text", "Method", base.ASCII)
-f_prototype = ProtoField.string("thundercomrpc.invoke.prototype", "Prototype", base.ASCII)
-f_return_value = ProtoField.string("thundercomrpc.invoke.return_value", "Return value", base.ASCII)
-f_parameters = ProtoField.string("thundercomrpc.invoke.parameters", "Parameters", base.ASCII)
-f_call_duration = ProtoField.string("thundercomrpc.invoke.call_duration", "Call duration")
-
--- Protocol definition
-thunder_protocol_tcp = Proto("Thunder-COMRPC", "Thunder COM-RPC Protocol")
-thunder_protocol_tcp.fields = { f_source_process, f_dest_process, f_frame_request, f_frame_response, f_frame_length, f_command, f_direction,
-  f_label, f_instance, f_instance_tag, f_interface, f_process_id, f_exchange_id, f_version, f_class, f_kind, f_sequence, f_settings,
-  f_method, f_method_text, f_return_value, f_parameters, f_call_duration, f_payload_size }
-
--- Data
-INTERFACES = {}
-METHODS = {}
-ENUMS = {}
 
 Type = {
   STRING = 1,
@@ -103,7 +63,9 @@ Type = {
   ENUM32 = 21,
   ENUMU32 = 22,
   ENUM64 = 23,
-  ENUMU64 = 24
+  ENUMU64 = 24,
+  OBJECT = 25,
+  HRESULT = 26
 }
 
 FLEXIBLE = 0
@@ -133,8 +95,15 @@ TypeInfo = {
   [Type.ENUM32] =     { size=4, kind="enum", signed=true },
   [Type.ENUMU32] =    { size=4, kind="enum", signed=false },
   [Type.ENUM64] =     { size=8, kind="enum", signed=true },
-  [Type.ENUMU64] =    { size=8, kind="enum", signed=false }
+  [Type.ENUMU64] =    { size=8, kind="enum", signed=false },
+  [Type.OBJECT] =     { size=INSTANCE_ID_SIZE, kind="object"},
+  [Type.HRESULT] =    { size=4, kind="hresult", signed=false }
 }
+
+-- Data
+INTERFACES = {}
+METHODS = {}
+ENUMS = {}
 
 -- IUnknown is a well-known interface
 IUNKNOWN = 0
@@ -142,8 +111,14 @@ IUNKNOWN_METHODS = 3
 INTERFACES[IUNKNOWN] = "Core::IUnknown"
 METHODS[IUNKNOWN] = {
   [0] = { name = "AddRef" },
-  [1] = { name = "Release", retvals = { { type = Type.UINT32 }} },
-  [2] = { name = "QueryInterface", retvals = { { type = Type.INSTANCE } }, params = { { name = "interface", type = Type.INTERFACE } } }
+  [1] = { name = "Release", retvals = { { type = Type.HRESULT } }, params = { { name = "count", type = Type.UINT32, hide = true } } },
+  [2] = { name = "QueryInterface", retvals = { { type = Type.OBJECT, interface = 1 } }, params = { { name = "interface", type = Type.INTERFACE } } }
+}
+
+ERROR_CODES = {
+  [0] = "Core::ERROR_NONE",
+  [11] = "Core::ERROR_TIMEDOUT",
+  [17] = "Core::ERROR_DESCTRUCTION_SUCCEEDED"
 }
 
 local function cwd()
@@ -153,6 +128,45 @@ end
 
 -- Load rest of interface information
 assert(loadfile(cwd() .. "protocol-thunder-comrpc.data"))(INTERFACES, METHODS, ENUMS, Type)
+
+-- Protocol fields
+-- Commons
+f_source_process = ProtoField.string("thundercomrpc.source_process", "Source process", base.ASCII)
+f_dest_process = ProtoField.string("thundercomrpc.dest_process", "Destination process", base.ASCII)
+f_frame_request = ProtoField.framenum("thundercomrpc.frame_request", "Request", base.NONE, frametype.REQUEST)
+f_frame_response = ProtoField.framenum("thundercomrpc.frame_response", "Response", base.NONE, frametype.RESPONSE)
+f_frame_length = ProtoField.uint32("thundercomrpc.frame_length", "Frame size", base.DEC)
+f_command = ProtoField.uint32("thundercomrpc.command", "Command", base.HEX)
+f_direction = ProtoField.uint8("thundercomrpc.direction", "Direction", base.DEC, { [DIRECTION_INBOUND] = "Return", [DIRECTION_OUTBOUND] = "Call" }, 0x1)
+f_label = ProtoField.uint32("thundercomrpc.label", "Label", base.DEC, { [LABEL_ANNOUNCE] = "Announce", [LABEL_INVOKE] = "Invoke" }, 0xFFFFFFFE)
+f_instance = ProtoField.uint32("thundercomrpc.instance", "Instance", base.HEX)
+f_instance_tag = ProtoField.string("thundercomrpc.instance_tag", "Instance tag", base.ASCII)
+f_interface = ProtoField.uint32("thundercomrpc.interface", "Interface", base.HEX, INTERFACES)
+f_payload_size = ProtoField.uint32("thundercomrpc.payload_size", "Payload size", base.DEC)
+-- Announce only
+f_process_id = ProtoField.uint32("thundercomrpc.announce.id", "ID", base.DEC)
+f_exchange_id = ProtoField.uint32("thundercomrpc.announce.exchangeid", "Exchange ID", base.HEX)
+f_version = ProtoField.uint32("thundercomrpc.announce.version", "Version", base.DEC)
+f_class = ProtoField.stringz("thundercomrpc.announce.class", "Class", base.ASCII)
+f_kind = ProtoField.uint8("thundercomrpc.announce.kind", "Kind", base.DEC, { [0] = "Acquire", [1] = "Offer", [2] = "Revoke", [3] = "Request" } )
+f_sequence = ProtoField.uint8("thundercomrpc.announce.sequence", "Sequence", base.DEC)
+f_settings = ProtoField.string("thundercomrpc.announce.settings", "Settings", base.ASCII)
+-- Invoke only
+f_method = ProtoField.uint8("thundercomrpc.invoke.method", "Method", base.DEC)
+f_method_text = ProtoField.string("thundercomrpc.invoke.method_text", "Method", base.ASCII)
+f_prototype = ProtoField.string("thundercomrpc.invoke.prototype", "Prototype", base.ASCII)
+f_return_value = ProtoField.string("thundercomrpc.invoke.return_value", "Return value", base.ASCII)
+f_parameters = ProtoField.string("thundercomrpc.invoke.parameters", "Parameters", base.ASCII)
+f_call_duration = ProtoField.string("thundercomrpc.invoke.call_duration", "Call duration", base.ASCII)
+f_cached_addref = ProtoField.string("thundercomrpc.invoke.cached_addref", "Cached AddRef", base.ASCII)
+f_cached_release = ProtoField.string("thundercomrpc.invoke.cached_release", "Cached Release", base.ASCII)
+
+-- Protocol definition
+thunder_protocol_tcp = Proto("Thunder-COMRPC", "Thunder COM-RPC Protocol")
+thunder_protocol_tcp.fields = { f_source_process, f_dest_process, f_frame_request, f_frame_response, f_frame_length, f_command, f_direction,
+  f_label, f_instance, f_instance_tag, f_interface, f_process_id, f_exchange_id, f_version, f_class, f_kind, f_sequence, f_settings,
+  f_method, f_method_text, f_return_value, f_parameters, f_call_duration, f_payload_size, f_cached_addref, f_cached_release }
+
 
 -- Reads a packed integer value
 function read_varint(buffer)
@@ -197,6 +211,7 @@ function parameter(typeinfo, buffer)
   local signed = TypeInfo[typeid].signed
   local kind = TypeInfo[typeid].kind
   local name = typeinfo.name
+  local data = 0
 
   if size ~= FLEXIBLE then
     if signed == true then
@@ -207,14 +222,19 @@ function parameter(typeinfo, buffer)
 
     if signed ~= nil then
       value = tostring(data)
-      
-      if TypeInfo[typeid].text == "enum" then
+
+      if TypeInfo[typeid].kind == "enum" then
         if typeinfo.enum then
           kind = kind .. " " .. typeinfo.enum
-          
+
           if ENUMS[typeinfo.enum] then
             value = value .. " '" .. ENUMS[typeinfo.enum][data] .. "'"
           end
+        end
+
+      elseif typeid == Type.HRESULT then
+        if ERROR_CODES[data] then
+          value = value .. " '" .. ERROR_CODES[data] .. "'"
         end
       end
     end
@@ -225,12 +245,21 @@ function parameter(typeinfo, buffer)
       value = "'" .. string.char(data) .. "'"
     elseif typeid == Type.BOOL then
       local val = buffer(0, 1):uint()
-      if val then 
+      if val then
         value = "true"
-      else 
+      else
         value = "false"
       end
     elseif typeid == Type.INSTANCE then
+      if G_INSTANCES[data] and G_INSTANCES[data] ~= "" then
+        value = string.format("0x%08x '%s'", data, G_INSTANCES[data])
+      else
+        value = string.format("0x%08x", data)
+      end
+    elseif typeid == Type.OBJECT then
+      if typeinfo.class then
+        kind = kind .. " " .. typeinfo.class .. " *"
+      end
       if G_INSTANCES[data] and G_INSTANCES[data] ~= "" then
         value = string.format("0x%08x '%s'", data, G_INSTANCES[data])
       else
@@ -255,7 +284,7 @@ function parameter(typeinfo, buffer)
     end
   end
 
-  return size, value, kind, name
+  return size, value, data, kind, name
 end
 
 -- Creates a table of strings representing the method's parameters (or return values)
@@ -266,49 +295,67 @@ function method_dissect_params(param_list, buffer)
   if buffer and param_list then
     for _, typeinfo in pairs(param_list) do
 
-      local size, value, kind, name = parameter(typeinfo, buffer(offset, buffer:len() - offset))
+      local size, value, data, kind, name = parameter(typeinfo, buffer(offset, buffer:len() - offset))
 
       if value then
-        table.insert(params, { offset=offset, size=size, typeinfo=typeinfo, value=value, kind=kind, name=name })
+        table.insert(params, { offset=offset, size=size, typeinfo=typeinfo, value=value, data=data, kind=kind, name=name })
       end
 
       offset = (offset + size)
     end
   end
 
-  return params
+  return params, offset
 end
 
 -- Finds a method's parameters
 function method_params(signature, buffer)
   local params = {}
   local name = nil
+  local size = 0
 
   if signature then
     name = signature.name
 
     if signature.params then
-      params = method_dissect_params(signature.params, buffer)
+      params, size = method_dissect_params(signature.params, buffer)
     end
   end
 
-  return name, params
+  if params then
+    for _, param in pairs(params) do
+      if param.kind == "object" then
+        param.kind = param.kind .. " " .. params[param.typeinfo.interface].data
+       end
+    end
+  end
+
+  return name, params, size
 end
 
 -- Finds a method's return values
-function method_return_value(signature, buffer)
+function method_return_value(signature, buffer, input_params)
   local params = {}
   local name = nil
+  local size = 0
 
   if signature then
     name = signature.params
 
     if signature.retvals then
-      params = method_dissect_params(signature.retvals, buffer)
+      params, size = method_dissect_params(signature.retvals, buffer)
     end
   end
 
-  return name, params
+  if params then
+    for _, param in pairs(params) do
+      if param.kind == "object" then
+        param.kind = param.kind .. " " .. INTERFACES[input_params[param.typeinfo.interface].data] .. " *"
+      end
+    end
+  end
+
+  return name, params, size
 end
 
 -- Make sure not to display linefeed characters in the info column...
@@ -420,11 +467,11 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
       if G_IMPLEMENTATIONS[impl] == nil then
         G_IMPLEMENTATIONS[impl] = 0
       end
-      
+
       G_IMPLEMENTATIONS[impl] = G_IMPLEMENTATIONS[impl] + 1
 
-      G_INSTANCES[instance] = string.lower(impl) .. "_" .. string.char(G_IMPLEMENTATIONS[impl] + 64)    
-   end
+      G_INSTANCES[instance] = string.lower(impl) .. "_" .. string.char(G_IMPLEMENTATIONS[impl] + 64)
+    end
 
     if label == LABEL_INVOKE then
       -- Find then method and it text name
@@ -436,7 +483,7 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
       end
 
       local signature = method_signature(interface, method)
-      local method_name, params = method_params(signature, param_buffer)
+      local method_name, params, size = method_params(signature, param_buffer)
       if not method_name then
         method_name = "{method:" .. method .. "}"
       end
@@ -451,16 +498,24 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
         local text = ""
         if param.name then
           text = "(" .. param.kind .. ") " .. param.name .. " = " .. param.value
-          params_text = params_text .. param.name .. "=" .. multiline_text(param.value) .. ", "
+          if not param.typeinfo.hide then
+            params_text = params_text .. param.name .. "=" .. multiline_text(param.value) .. ", "
+          end
         else
           text = "(" .. param.kind .. ") " .. param.value
-          params_text = params_text .. multiline_text(param.value) .. ", "
-        end
-        
+          if not param.typeinfo.hide then
+            params_text = params_text .. multiline_text(param.value) .. ", "
+          end
+       end
+
         subtree:add(f_parameters, payload_buffer(9 + param.offset, param.size), text)
       end
 
+      G_PARAMS[frame] = params
+
       params_text = string.sub(params_text, 1, -3)
+
+      offset = offset + size
 
       -- Construct the call line and cache it so it can be used with the return call
       local call_line = string.format("%s->%s(%s)", G_INSTANCES[instance], method_name, params_text)
@@ -468,8 +523,6 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
       G_CALL_LINES[frame] = call_line
       G_SIGNATURES[frame] = signature
 
-      -- Done with the invoke message, advance...
-      offset = (offset + (2 * 4) + 1)
 
     elseif label == LABEL_ANNOUNCE then
       -- Beware, the announce data is in little endian!
@@ -511,7 +564,8 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
       table.remove(G_CALLSTACK[channel], 1)
     end
 
-    local duration = string.format("%.6f", (pinfo.rel_ts - G_TIMESTAMPS[G_REQUESTS[frame]])):gsub(",",".")
+    local duration_rel_ts = (pinfo.rel_ts - G_TIMESTAMPS[G_REQUESTS[frame]])
+    local duration = string.format("%.6f", duration_rel_ts):gsub(",",".")
 
     -- We always know the request frame
     subtree:add(f_frame_request, payload_buffer(0,0), G_REQUESTS[frame]):set_text("This is a response to the COM-RPC call in frame: " .. G_REQUESTS[frame]):set_generated(true)
@@ -520,13 +574,14 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
     if label == LABEL_INVOKE then
       -- Use the cached call line to fill it in here
       local return_value_buffer = nil
+
       if payload_size > 0 then
         return_value_buffer = payload_buffer(0, payload_size)
       end
 
-      local _, params = method_return_value(G_SIGNATURES[G_REQUESTS[frame]], return_value_buffer)
+      local _, params, size = method_return_value(G_SIGNATURES[G_REQUESTS[frame]], return_value_buffer, G_PARAMS[G_REQUESTS[frame]])
       local params_text = ""
-        
+
       for _, param in pairs(params) do
         local text = ""
         if param.name then
@@ -540,13 +595,30 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
         subtree:add(f_return_value, payload_buffer(param.offset, param.size), text)
       end
 
+      local overlay_offset = size
+
+      while overlay_offset < payload_size do
+        local instance = payload_buffer(overlay_offset, 4):uint()
+        local id = payload_buffer(overlay_offset + 4, 4):uint()
+        local how = payload_buffer(overlay_offset + 8, 1):uint()
+        local target = string.format("(%s *) 0x%08x '%s'", INTERFACES[id], instance, G_INSTANCES[instance])
+        if how == 1 then
+          subtree:add(f_cached_addref, payload_buffer(overlay_offset, 9), target)
+        elseif how == 2 then
+          subtree:add(f_cached_release, payload_buffer(overlay_offset, 9), target)
+        end
+        overlay_offset = overlay_offset + 9
+      end
+
       params_text = string.sub(params_text, 1, -3)
 
       pinfo.cols.info = G_CALL_LINES[G_REQUESTS[frame]] .. " returned " .. params_text
 
+      offset = offset + size
+
     elseif label == LABEL_ANNOUNCE then
       -- Fill in sequence number
-      subtree:add(f_sequence, payload_buffer(4,4))
+      subtree:add(f_sequence, payload_buffer(4, 4))
 
       -- Read the three configuration strings (just display as they are)
       local offs = 8
@@ -560,6 +632,7 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
 
       offset = (offset + offs)
     end
+
   end
 end
 
