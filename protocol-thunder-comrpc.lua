@@ -158,9 +158,9 @@ thunder_protocol_tcp.prefs.instance_tags = Pref.bool("Provide name tags for inst
 thunder_protocol_tcp.prefs.color_errors = Pref.bool("Mark non-zero hresult", true)
 thunder_protocol_tcp.prefs.text = Pref.statictext("COM servers:")
 thunder_protocol_tcp.prefs.extra_port_1 = Pref.string("Port", (FRAMEWORK_NAME .. "=" .. DEFAULT_THUNDER_COM_PORT), "name=port")
-thunder_protocol_tcp.prefs.extra_port_2 = Pref.string("Port", "OCDM_Server=7912", "name=port")
-thunder_protocol_tcp.prefs.extra_port_3 = Pref.string("Port", "Provision_Server=7777", "name=port")
-thunder_protocol_tcp.prefs.extra_port_4 = Pref.string("Port", ";MessageUnit=62100", "name=port")
+thunder_protocol_tcp.prefs.extra_port_2 = Pref.string("Port", ";OpenCDMServer=7912", "name=port")
+thunder_protocol_tcp.prefs.extra_port_3 = Pref.string("Port", ";Provisioning=7777", "name=port")
+thunder_protocol_tcp.prefs.extra_port_4 = Pref.string("Port", ";Svalbard=64000", "name=port")
 thunder_protocol_tcp.prefs.extra_port_5 = Pref.string("Port", "", "name=port")
 thunder_protocol_tcp.prefs.extra_port_6 = Pref.string("Port", "", "name=port")
 thunder_protocol_tcp.prefs.extra_port_7 = Pref.string("Port", "", "name=port")
@@ -752,18 +752,24 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       end
 
       local kind = payload_buffer((INSTANCE_ID_SIZE + 16), 1):uint()
+
+      local interface_text = "<none>"
+      if interface ~= 0xFFFFFFFF and INTERFACES[interface] ~= nil then
+        interface_text = INTERFACES[interface]
+      end
+
       if kind == ANNOUNCE_KIND_ACQUIRE then
         if class_length > 0 then
-          cols_info = string.format("Acquire: class %s, interface %s", payload_buffer((INSTANCE_ID_SIZE + 19), class_length):raw(), INTERFACES[interface])
+          cols_info = string.format("Acquire: class '%s', interface %s", payload_buffer((INSTANCE_ID_SIZE + 19), class_length):raw(), interface_text)
         else
-          cols_info = string.format("Acquire: interface %s", INTERFACES[interface])
+          cols_info = string.format("Acquire: interface %s", interface_text)
         end
       elseif kind == ANNOUNCE_KIND_OFFER then
-        cols_info = string.format("Offer: interface %s, instance 0x%s '%s'", INTERFACES[interface], instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("Offer: interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       elseif kind == ANNOUNCE_KIND_REVOKE then
-        cols_info = string.format("Revoke: interface %s, instance 0x%s '%s'", INTERFACES[interface], instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("Revoke: interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       elseif kind == ANNOUNCE_KIND_REQUEST then
-        cols_info = string.format("Request: interface %s, instance 0x%s '%s'", INTERFACES[interface], instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("Request: interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       end
 
       -- Done with the announce message, advance...
