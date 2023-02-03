@@ -155,7 +155,7 @@ thunder_protocol_tcp.fields = { f_source_process, f_dest_process, f_frame_reques
 local instance_id_size_tab = { { 1, "8-bit", 1 }, { 2, "16-bit", 2 }, { 3, "32-bit", 4 }, { 2, "64-bit", 8 } }
 thunder_protocol_tcp.prefs.instance_id_size = Pref.enum("Max instance ID size", DEFAULT_INSTANCE_ID_SIZE, "size", instance_id_size_tab, false)
 thunder_protocol_tcp.prefs.instance_tags = Pref.bool("Provide name tags for instances", true)
-thunder_protocol_tcp.prefs.color_errors = Pref.bool("Mark non-zero hresult", true)
+thunder_protocol_tcp.prefs.color_errors = Pref.bool("Highlight responses with non-zero hresult", true)
 thunder_protocol_tcp.prefs.text = Pref.statictext("COM servers:")
 thunder_protocol_tcp.prefs.extra_port_1 = Pref.string("Port", (FRAMEWORK_NAME .. "=" .. DEFAULT_THUNDER_COM_PORT), "name=port")
 thunder_protocol_tcp.prefs.extra_port_2 = Pref.string("Port", ";OpenCDMServer=7912", "name=port")
