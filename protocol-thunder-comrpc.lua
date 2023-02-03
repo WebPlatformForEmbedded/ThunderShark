@@ -722,7 +722,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
         elseif class then
           G_PROCESSES[source_id] = class
         else
-          G_PROCESSES[source_id] = string.format("process[%s]", instance_hex)
+          G_PROCESSES[source_id] = string.format("process[%s]", payload_buffer(INSTANCE_ID_SIZE, 4):uint())
         end
 
         print(string.format("COM-RPC client '%s' on port %u", G_PROCESSES[source_id], source_id))
