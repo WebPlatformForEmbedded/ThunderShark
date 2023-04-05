@@ -392,21 +392,15 @@ local function parameter(typeinfo, buffer, is_ret_val)
     elseif (typeid == Type.BUFFER8) or (typeid == Type.BUFFER16) or (typeid == Type.BUFFER32) then
       -- Here also length comes from the wire
       local length = TypeInfo[typeid].length
-      local offset = 0
       local buffer_size = buffer(0, length):uint()
 
       if buffer_size > 0 then
-        -- (!) This looks overengineered...
-        if is_ret_val and typeinfo.length_param then
-          offset = 2
-        end
-
-        value = buffer(offset + length, buffer_size):bytes():tohex()
+        value = buffer(length, buffer_size):bytes():tohex()
       else
         value = "nil"
       end
 
-      size = (offset + length + buffer_size)
+      size = (length + buffer_size)
     end
    end
 
@@ -760,16 +754,18 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
 
       if kind == ANNOUNCE_KIND_ACQUIRE then
         if class_length > 0 then
-          cols_info = string.format("Acquire: class '%s', interface %s", payload_buffer((INSTANCE_ID_SIZE + 19), class_length):raw(), interface_text)
+          cols_info = string.format("Channel open, ACQUIRE, class '%s', interface %s", payload_buffer((INSTANCE_ID_SIZE + 19), class_length):raw(), interface_text)
+        elseif interface ~= 0xFFFFFFFF and INTERFACES[interface] ~= nil then
+          cols_info = string.format("ACQUIRE, interface %s", interface_text)
         else
-          cols_info = string.format("Acquire: interface %s", interface_text)
+          cols_info = "Channel open"
         end
       elseif kind == ANNOUNCE_KIND_OFFER then
-        cols_info = string.format("Offer: interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("OFFER, interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       elseif kind == ANNOUNCE_KIND_REVOKE then
-        cols_info = string.format("Revoke: interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("REVOKE, interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       elseif kind == ANNOUNCE_KIND_REQUEST then
-        cols_info = string.format("Request: interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("Channel open, REQUEST, interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       end
 
       -- Done with the announce message, advance...
@@ -855,10 +851,38 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       end
 
     elseif label == LABEL_ANNOUNCE then
+      local instance = payload_buffer(0, INSTANCE_ID_SIZE):uint64()
+      local instance_hex = instance:tohex():sub(-INSTANCE_ID_SIZE*2)
+
+      subtree:add(f_instance, payload_buffer(0, INSTANCE_ID_SIZE), instance):set_text(string.format("Instance: 0x%s", instance_hex))
+
+      -- Enumerate instances to give them an alias (name of the interface followed by a counter letter)
+      if HAVE_INSTANCE_TAGS and (instance:tonumber() ~= 0) and ((G_INSTANCES[instance_hex] == nil) or (G_INSTANCES[instance_hex]:len() == 0)) then
+        local impl = "impl"
+
+        if INTERFACES[interface] ~= nil then
+          local idx = INTERFACES[interface]:reverse():find("I::")
+          impl = INTERFACES[interface]:sub(1 - idx)
+        end
+
+        if G_IMPLEMENTATIONS[impl] == nil then
+          G_IMPLEMENTATIONS[impl] = 0
+        end
+
+        G_IMPLEMENTATIONS[impl] = (G_IMPLEMENTATIONS[impl] + 1)
+        G_INSTANCES[instance_hex] = (string.lower(impl) .. "_" .. string.char(G_IMPLEMENTATIONS[impl] + 64))
+
+        print(string.format("object 0x%s tagged as '%s'", instance_hex, G_INSTANCES[instance_hex]))
+      end
+
+      if instance:tonumber() ~= 0 then
+        subtree:add(f_instance_tag, payload_buffer(0, INSTANCE_ID_SIZE), G_INSTANCES[instance_hex]):set_generated(true)
+      end
+
       subtree:add(f_sequence, payload_buffer(INSTANCE_ID_SIZE, 4))
 
       -- Read the three configuration strings (just display as they are)
-      local offs = INSTANCE_ID_SIZE + 4
+      local offs = INSTANCE_ID_SIZE + 4 + 1
       for i = 1, 3 do
         local size = payload_buffer(offs, 2):uint()
         if size ~= 0 then
@@ -873,6 +897,10 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       offset = (offset + offs)
 
       cols_info = ("connection ID " .. payload_buffer(INSTANCE_ID_SIZE, 4):uint())
+      if instance:tonumber() ~= 0 then
+         cols_info = cols_info .. string.format(", instance 0x%s '%s'", instance_hex, G_INSTANCES[instance_hex])
+      end
+
     end
 
   end
