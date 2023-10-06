@@ -67,7 +67,9 @@ Type = {
   ENUMU64 = 23,
   OBJECT = 24,
   HRESULT = 25,
-  POD = 26
+  POD = 26,
+  FLOAT32 = 27,
+  FLOAT64 = 28
 }
 
 ERROR_CODES = {
@@ -255,7 +257,9 @@ local function reset()
     [Type.ENUMU64] =    { size=8, kind="enum", signed=false },
     [Type.OBJECT] =     { size=INSTANCE_ID_SIZE, kind="object" },
     [Type.HRESULT] =    { size=4, kind="hresult", signed=false },
-    [Type.POD] =        { size=0, kind="POD" }
+    [Type.POD] =        { size=0, kind="POD" },
+    [Type.FLOAT32] =    { size=4, kind="float" },
+    [Type.FLOAT64] =    { size=8, kind="double" }
   }
 end
 
@@ -340,6 +344,13 @@ local function parameter(typeinfo, buffer, is_ret_val)
       elseif typeid == Type.HRESULT then
         if ERROR_CODES[data_number] and (size <= 4) then
           value = (value .. " 'Core::" .. ERROR_CODES[data_number] .. "'")
+        end
+      end
+    else
+      if typeid == Type.FLOAT32 or typeid == Type.FLOAT64 then
+        value = string.format("%.f", data_buffer:float()):gsub(",",".")
+        if not string.find(value, ".", 1, true) then
+          value = (value .. ".0")
         end
       end
     end
