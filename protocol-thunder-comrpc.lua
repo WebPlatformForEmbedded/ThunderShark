@@ -17,6 +17,8 @@
 -- along with this program; If not, see <http://www.gnu.org/licenses/>.
 --
 
+bit32 = bit
+
 -- Configurables
 PLUGIN_NAME = "ThunderShark"
 PROTOCOL_NAME = "Thunder-COMRPC"
@@ -302,7 +304,6 @@ local function parameter(typeinfo, buffer, is_ret_val)
   local value = nil
   local typeid = typeinfo.type
   local size = TypeInfo[typeid].size
-  local data_buffer = buffer(0, size)
   local signed = TypeInfo[typeid].signed
   local kind = TypeInfo[typeid].kind
   local name = typeinfo.name
@@ -310,12 +311,24 @@ local function parameter(typeinfo, buffer, is_ret_val)
   local data_hex = ""
   local data_number = 0
 
+  if typeinfo.optional then
+    present = buffer(0,1):uint()
+
+    if (present == 0) then
+      return 1, value, data_number, kind, typeid, name, true
+    end
+
+    buffer = buffer(1, buffer:len()-1)
+  end
+
   -- The data is always read as uint64 type.
   -- It is assumed that error codes, enums and interface ids will never exceed 32 bits
   -- as :tonumber() may lose precision in such cases.
 
   if (size ~= SIZE_FOLLOWS) and (size ~= 0) then
     assert(size <= 8)
+
+    local data_buffer = buffer(0, size)
 
     -- Have fixed size field
     if signed == true then
@@ -348,7 +361,7 @@ local function parameter(typeinfo, buffer, is_ret_val)
       end
     else
       if typeid == Type.FLOAT32 or typeid == Type.FLOAT64 then
-        value = string.format("%.f", data_buffer:float()):gsub(",",".")
+        value = string.format("%.f", small_buffer:float()):gsub(",",".")
         if not string.find(value, ".", 1, true) then
           value = (value .. ".0")
         end
@@ -392,7 +405,10 @@ local function parameter(typeinfo, buffer, is_ret_val)
     elseif typeid == Type.STRING then
       -- Here length comes from the wire
       local length = TypeInfo[typeid].length
+      assert(buffer:len() >= length)
       local string_size = buffer(0, length):uint()
+      assert(buffer:len() >= length + string_size)
+
       if string_size > 0 then
         value = string.format("\"%s\"", buffer(length, string_size):raw())
       else
@@ -401,21 +417,28 @@ local function parameter(typeinfo, buffer, is_ret_val)
       size = (length + string_size)
 
     elseif (typeid == Type.BUFFER8) or (typeid == Type.BUFFER16) or (typeid == Type.BUFFER32) then
+
       -- Here also length comes from the wire
       local length = TypeInfo[typeid].length
+      assert(buffer:len() >= length)
       local buffer_size = buffer(0, length):uint()
+      assert(buffer:len() >= length + string_size)
 
       if buffer_size > 0 then
         value = buffer(length, buffer_size):bytes():tohex()
       else
-        value = "nil"
+        value = "<empty>"
       end
 
       size = (length + buffer_size)
     end
-   end
+  end
 
-  return size, value, data_number, kind, typeid, name
+  if typeinfo.optional then
+    size = size + 1
+  end
+
+  return size, value, data_number, kind, typeid, name, typeinfo.optional
 end
 
 -- Creates a table of strings representing the method's parameters (or return values)
@@ -430,11 +453,9 @@ local function method_dissect_params(param_list, buffer, is_ret_val)
         local size = 0
 
         if typeinfo.type ~= Type.POD then
-          local size, value, data, kind, typeid, name = parameter(typeinfo, buffer(offset, buffer:len() - offset), is_ret_val)
+          local size, value, data, kind, typeid, name, optional = parameter(typeinfo, buffer(offset, buffer:len() - offset), is_ret_val)
 
-          if value then
-            table.insert(params, { offset=offset, size=size, typeinfo=typeinfo, value=value, data=data, kind=kind, typeid=typeid, name=name })
-          end
+          table.insert(params, { offset=offset, size=size, typeinfo=typeinfo, value=value, data=data, kind=kind, typeid=typeid, name=name })
 
           offset = (offset + size)
 
@@ -659,24 +680,55 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       for _, param in pairs(params) do
         local text = ""
 
-        if param.name then
-          text = ("(" .. param.kind .. ") " .. param.name .. " = " .. param.value)
-
-          if not param.typeinfo.hide then
-            params_text = (params_text .. param.name .. "=" .. multiline_text(param.value) .. ", ")
-          end
-        else
-          text = ("(" .. param.kind .. ") " .. param.value)
-
-          if not param.typeinfo.hide then
-            params_text = (params_text .. multiline_text(param.value) .. ", ")
-          end
+        unset = false
+        kind = param.kind
+        if param.optional then
+          kind = string.format("OptionalType<%s>", kind)
         end
 
-        subtree:add(f_parameters, payload_buffer(INSTANCE_ID_SIZE + 5 + param.offset, param.size), text)
+        if param.value then
+          if param.name then
+            text = ("(" .. kind .. ") " .. param.name .. " = " .. param.value)
+
+            if not param.typeinfo.hide then
+              params_text = (params_text .. param.name .. "=" .. multiline_text(param.value))
+            end
+          else
+            text = ("(" .. kind .. ") " .. param.value)
+
+            if not param.typeinfo.hide then
+              params_text = (params_text .. multiline_text(param.value))
+            end
+          end
+
+          params_text = params_text .. ", "
+        else
+          unset = true
+          if param.name then
+            text = ("(" .. kind .. ") " .. param.name .. " <unset>")
+
+            if not param.typeinfo.hide then
+              params_text = (params_text .. param.name .. "=<unset>")
+            end
+          else
+            text = ("(" .. kind .. ") ")
+
+            if not param.typeinfo.hide then
+              params_text = (params_text .. "<unset>")
+            end
+          end
+
+          params_text = params_text .. ", "
+        end
+
+        subtree:add(f_parameters, payload_buffer(INSTANCE_ID_SIZE + 5 + param.offset, param.size), text):set_generated(unset)
       end
 
-      params_text = string.sub(params_text, 1, -3)
+      if method_info then
+        params_text = string.sub(params_text, 1, -3)
+      else
+        params_text = "<unknown...>"
+      end
 
       -- Construct the call line and cache it so it can be used with the return call
       local instance_text = G_INSTANCES[instance_hex]
@@ -704,13 +756,14 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
         table.insert(G_CALLSTACK[channel], 1, frame)
       else
         -- This is not the first pass, so we finally know the response frame number
-        subtree:add(f_frame_response, dummy_buffer, G_RESPONSES[frame]):set_text("Response to this COM-PRC call is in frame: " .. G_RESPONSES[frame]):set_generated(true)
+        subtree:add(f_frame_response, dummy_buffer, G_RESPONSES[frame]):set_text("Response to this COM-RPC call is in frame: " .. G_RESPONSES[frame]):set_generated(true)
       end
 
       local class = nil
       local callsign = nil
 
       local class_length = payload_buffer((INSTANCE_ID_SIZE + 17), 2):uint()
+
       if class_length > 0 then
         class = payload_buffer((INSTANCE_ID_SIZE + 17 + 2), class_length):raw()
       end
@@ -759,8 +812,12 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       local kind = payload_buffer((INSTANCE_ID_SIZE + 16), 1):uint()
 
       local interface_text = "<none>"
-      if interface ~= 0xFFFFFFFF and INTERFACES[interface] ~= nil then
-        interface_text = INTERFACES[interface]
+      if interface ~= 0xFFFFFFFF then
+        if INTERFACES[interface] ~= nil then
+          interface_text = INTERFACES[interface]
+        else
+          interface_text = "<unknown>" .. string.format(" (ID 0x%08x)", interface)
+        end
       end
 
       if kind == ANNOUNCE_KIND_ACQUIRE then
@@ -810,7 +867,6 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       local _, params, size = method_return_value(signature, return_value_buffer, G_PARAMS[G_REQUESTS[frame]])
 
       local params_text = ""
-
       local hresult = nil
 
       for _, param in pairs(params) do
@@ -844,21 +900,26 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       cols_info = request_text .. " returned " .. params_text
       offset = (offset + size)
 
-      local overlay_offset = size
-      while overlay_offset < payload_size do
-        local instance = payload_buffer(overlay_offset, INSTANCE_ID_SIZE):uint64()
-        local instance_hex = instance:tohex():sub(-INSTANCE_ID_SIZE*2)
-        local id = payload_buffer((overlay_offset + INSTANCE_ID_SIZE), 4):uint()
-        local how = payload_buffer((overlay_offset + INSTANCE_ID_SIZE + 4), 1):uint()
-        local target = string.format("(%s *) 0x%s '%s'", INTERFACES[id], instance_hex, G_INSTANCES[instance_hex])
+      if signature then
+        local overlay_offset = size
+        while overlay_offset < payload_size do
+          assert(payload_buffer:len() >= (INSTANCE_ID_SIZE + 4 + 4))
+          local instance = payload_buffer(overlay_offset, INSTANCE_ID_SIZE):uint64()
+          local instance_hex = instance:tohex():sub(-INSTANCE_ID_SIZE*2)
+          local id = payload_buffer((overlay_offset + INSTANCE_ID_SIZE), 4):uint()
+          local how = payload_buffer((overlay_offset + INSTANCE_ID_SIZE + 4), 1):uint()
+          local target = string.format("(%s *) 0x%s '%s'", INTERFACES[id], instance_hex, G_INSTANCES[instance_hex])
 
-        if how == 1 then
-          subtree:add(f_cached_addref, payload_buffer(overlay_offset, (5 + INSTANCE_ID_SIZE)), target)
-        elseif how == 2 then
-          subtree:add(f_cached_release, payload_buffer(overlay_offset, (5 + INSTANCE_ID_SIZE)), target)
+          if how == 1 then
+            subtree:add(f_cached_addref, payload_buffer(overlay_offset, (5 + INSTANCE_ID_SIZE)), target)
+          elseif how == 2 then
+            subtree:add(f_cached_release, payload_buffer(overlay_offset, (5 + INSTANCE_ID_SIZE)), target)
+          end
+
+          overlay_offset = (overlay_offset + 5 + INSTANCE_ID_SIZE)
         end
-
-        overlay_offset = (overlay_offset + 5 + INSTANCE_ID_SIZE)
+      else
+        cols_info = cols_info .. "<unknown>"
       end
 
     elseif label == LABEL_ANNOUNCE then
