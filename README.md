@@ -15,8 +15,11 @@ Note that version 4.0 (or greater) of Wireshark is required.
 
 # Configuration
 
-Go to Edit/Preferences/Protocols/Thunder COM-RPC Protocol to set port
-numbers and other options. Make sure to select proper instance ID size.
+COM-RPC protocol settings are available under Edit/Preferences/Protocols/Thunder, and, they need to be adjusted for data parsing to work properly.
+
+The plugin monitors the TCP port for data exchange and identifies data as COM-RPC payload based on the port number.
+
+The Instance ID is NOT platform agnostic and it should be set to 8, 16, 32 or 64, for a 8-bit, 16-bit, 32-bit or 64-bit host system respectively.
 
 # Example capture
 
