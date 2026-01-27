@@ -1,5 +1,5 @@
 # ThunderShark
-Wireshark plugin for analyzing COM-RPC calls going over the wire.
+Wireshark plugin for analyzing Thunder COM-RPC calls going over the wire.
 
 The .lua file need to be placed in Wireshark's "plugins" folder
 together with the generated .data file (in Windows this is normally
@@ -7,19 +7,20 @@ together with the generated .data file (in Windows this is normally
 and on Linux ~/.local/lib/wireshark/plugins).
 
 Once the plugin is installed Wireshark will automatically dissect COM-RPC
-frames of the captured pcap data. Typically you will want to filter
-by "thunder-comrpc" protocol or a specific process (shortcuts are
-available in Tools/ThunderShark menu).
+frames of the captured pcap data. Filter by "thunder-comrpc" protocol or a
+specific process (shortcuts are available in Tools/ThunderShark menu).
 
 Note that version 4.0 (or greater) of Wireshark is required.
 
 # Configuration
 
-COM-RPC protocol settings are available under Edit/Preferences/Protocols/Thunder, and, they need to be adjusted for data parsing to work properly.
+COM-RPC protocol settings are available under Edit/Preferences/Protocols/Thunder
+menu and they may need to be adjusted for data parsing to work properly.
 
-The plugin monitors the TCP port for data exchange and identifies data as COM-RPC payload based on the port number.
+Only frames sent on specified port numbers will be scanned for COM-RPC messages.
 
-The Instance ID is NOT platform agnostic and it should be set to 8, 16, 32 or 64, for a 8-bit, 16-bit, 32-bit or 64-bit host system respectively.
+The Instance ID size is NOT platform agnostic and it should be set to 32 or 64
+for 32-bit or 64-bit host system respectively.
 
 # Example capture
 
@@ -34,6 +35,6 @@ On the DUT execute
 
 (Or use any other tool able to capture TCP/IP traffic and save it to a pcap file.)
 
-Start WPEFramework.
+Start Thunder.
 
 Load the .pcap file into Wireshark, dive deep.
