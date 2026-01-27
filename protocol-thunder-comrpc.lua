@@ -84,8 +84,9 @@ Type = {
   VECTOR16 = 39,
   VECTOR24 = 40,
   VECTOR32 = 41,
-  ARRAY8 = 42,
-  ARRAY16 = 43
+  ARRAY = 42,
+  ARRAY8 = 43,
+  ARRAY16 = 44
 }
 
 ERROR_CODES = {
@@ -126,6 +127,7 @@ local function cwd()
 end
 
 assert(loadfile(cwd() .. "protocol-thunder-comrpc.data"))(INTERFACES, METHODS, ENUMS, Type)
+assert(GENERATOR_VERSION == 2, "\n\nINCOMPATIBLE DATA FILE!\n\nPlease regenerate the protocol-thunder-comrpc.data file with the latest version of the LuaGenerator script.\n\nhttps://github.com/rdkcentral/ThunderTools\n\n")
 
 -- Protocol definition
 thunder_protocol_tcp = Proto(PROTOCOL_NAME, PROTOCOL_PRETTY_NAME)
@@ -246,7 +248,7 @@ local function reset()
     print(string.format("COM-RPC server '%s' on port %u", process, port))
   end
 
-  SIZE_FOLLOWS = 0
+  SIZE_FOLLOWS = -1
 
   TypeInfo = {
     [Type.CHAR] =       { size=1, kind="char" },
@@ -256,8 +258,8 @@ local function reset()
     [Type.UINT16] =     { size=2, kind="uint16_t", signed=false },
     [Type.INT32] =      { size=4, kind="int32_t", signed=true },
     [Type.UINT32] =     { size=4, kind="uint32_t", signed=false },
-    [Type.INT24] =      { size=3, kind="int24_t", signed=true },
-    [Type.UINT24] =     { size=3, kind="uint24_t", signed=false },
+    [Type.INT24] =      { size=3, kind="Core::Int24", signed=true },
+    [Type.UINT24] =     { size=3, kind="Core::UInt24", signed=false },
     [Type.INT64] =      { size=8, kind="int64_t", signed=true },
     [Type.UINT64] =     { size=8, kind="uint64_t", signed=false },
     [Type.STRING8] =    { size=SIZE_FOLLOWS, kind="string", length=1 },
@@ -289,8 +291,9 @@ local function reset()
     [Type.VECTOR16] =   { size=SIZE_FOLLOWS, kind="vector", length=2 },
     [Type.VECTOR24] =   { size=SIZE_FOLLOWS, kind="vector", length=3 },
     [Type.VECTOR32] =   { size=SIZE_FOLLOWS, kind="vector", length=4 },
-    [Type.ARRAY8] =     { size=SIZE_FOLLOWS, kind="array", length=1 },
-    [Type.ARRAY16] =    { size=SIZE_FOLLOWS, kind="array", length=2 },
+    [Type.ARRAY] =      { size=0, kind="array", length = 0 },
+    [Type.ARRAY8] =     { size=SIZE_FOLLOWS, kind="array", length = 1 },
+    [Type.ARRAY16] =    { size=SIZE_FOLLOWS, kind="array", length = 2 }
   }
 end
 
@@ -339,14 +342,14 @@ local function parameter(typeinfo, buffer, is_ret_val)
   local data = nil
   local data_hex = ""
   local data_number = 0
-  
+
   if typeinfo.optional then
     local present = buffer(0,1):uint()
 
     if (present == 0) then
       return 1, "<unset>", data_number, kind, typeid, name, true
     end
-    
+
     buffer = buffer(1, buffer:len()-1)
   end
 
@@ -358,7 +361,7 @@ local function parameter(typeinfo, buffer, is_ret_val)
     assert(size <= 8)
 
     local data_buffer = buffer(0, size)
-  
+
     -- Have fixed size field
     if signed == true then
       data = data_buffer:int64()
@@ -430,8 +433,9 @@ local function parameter(typeinfo, buffer, is_ret_val)
       else
         value = ("0x" .. data_hex)
       end
-      
+
     elseif typeid == Type.MAC then
+      assert(TypeInfo[typeid].size == SIZE_FOLLOWS)
       local length = TypeInfo[typeid].length
       assert(buffer:len() >= length)
       local mac_size = buffer(0, length):uint()
@@ -446,6 +450,7 @@ local function parameter(typeinfo, buffer, is_ret_val)
 
     elseif (typeid == Type.STRING8) or (typeid == Type.STRING16) or (typeid == Type.STRING24) or (typeid == Type.STRING32) then
       -- Here length comes from the wire
+      assert(TypeInfo[typeid].size == SIZE_FOLLOWS)
       local length = TypeInfo[typeid].length
       assert(buffer:len() >= length)
       local string_size = buffer(0, length):uint()
@@ -461,6 +466,7 @@ local function parameter(typeinfo, buffer, is_ret_val)
 
     elseif (typeid == Type.BUFFER8) or (typeid == Type.BUFFER16) or (typeid == Type.BUFFER24) or (typeid == Type.BUFFER32) then
       -- Here also length comes from the wire
+      assert(TypeInfo[typeid].size == SIZE_FOLLOWS)
       local length = TypeInfo[typeid].length
       assert(buffer:len() >= length)
       local buffer_size = buffer(0, length):uint()
@@ -493,13 +499,13 @@ local function method_dissect_params(param_list, start_offset, indent, buffer, i
 
       if typeinfo.length == nil then
         assert(typeinfo.type, _)
-      
+
         local size = 0
         local kind = TypeInfo[typeinfo.type].kind
 
         if (kind ~= "pod") and (kind ~= "array") and (kind ~= "vector") then
           local size, value, data, kind, typeid, name, optional = parameter(typeinfo, buffer(offset, buffer:len() - offset), is_ret_val)
-          
+
           local param = {
             offset = (start_offset + offset),
             size = size,
@@ -521,112 +527,122 @@ local function method_dissect_params(param_list, start_offset, indent, buffer, i
           local present = true
           local compound_offset = (start_offset + offset)
           local compound_size = 0
-          
-          if typeinfo.optional then         
+
+          if typeinfo.optional then
             local p = buffer(0,1):uint()
 
             if (p == 0) then
               present = false
             end
-            
+
             buffer = buffer(1, buffer:len()-1)
             offset = offset + 1
             compound_size = 1
-          end     
-        
+          end
+
           if present then
             if kind == "pod" then
               -- Recursively dissect PODs...
               local pod_params, pod_size = method_dissect_params(typeinfo.element, (start_offset + offset), (indent + 2), buffer(offset, buffer:len() - offset), is_ret_val)
-              
+
               local index = (#params + 1)
-         
+
               for _, val in ipairs(pod_params) do
                 val.name = (typeinfo.name .. "." .. val.name)
                 table.insert(params, val)
               end
-              
+
               local kind = "struct " .. typeinfo.class
-              
+
               compound_size = compound_size + pod_size
-              
-              local param = { 
-                offset = compound_offset, 
-                size = compound_size, 
-                typeinfo = typeinfo, 
-                value = "...", 
-                data = "", 
-                kind = kind, 
-                typeid = Type.POD, 
-                name = typeinfo.name, 
+
+              local param = {
+                offset = compound_offset,
+                size = compound_size,
+                typeinfo = typeinfo,
+                value = string.format("{%u elements}", #pod_params),
+                data = "",
+                kind = kind,
+                typeid = Type.POD,
+                name = typeinfo.name,
                 optional = typeinfo.optional,
                 indent = indent
               }
-          
+
               table.insert(params, index, param)
               offset = (offset + pod_size)
-         
+
             elseif (kind == "array") or (kind == "vector") then
               local length = TypeInfo[typeinfo.type].length
-              local count = buffer(offset, length):uint()
               local index = (#params + 1)
               local array_size = length
-              
+
+              local count = 0
+              if length == 0 then
+                -- Fixed array, take length from data file
+                assert(TypeInfo[typeinfo.type].size == 0)
+                count = typeinfo.count
+                assert(count ~= 0)
+              else
+                assert(TypeInfo[typeinfo.type].size == SIZE_FOLLOWS)
+                count = buffer(offset, length):uint()
+              end
+
               offset = (offset + length)
 
-              for index = 1, count do 
-                local element, element_size = method_dissect_params({typeinfo.element}, start_offset + offset, (indent + 2), buffer(offset, buffer:len() - offset), is_ret_val)     
-               
+              for index = 1, count do
+                local element, element_size = method_dissect_params({typeinfo.element}, start_offset + offset, (indent + 2), buffer(offset, buffer:len() - offset), is_ret_val)
+
                 for _, val in ipairs(element) do
                   if val.name then
                     val.name = string.format("%s[%s].%s", typeinfo.name, (index - 1), val.name)
                   else
                     val.name = string.format("%s[%s]", typeinfo.name, (index - 1))
                   end
-                  
+
                   table.insert(params, val)
-                  
+
                   offset = (offset + element_size)
                   array_size = array_size + element_size
                 end
               end
-              
+
               compound_size = compound_size + array_size
-              
+
               local kind = typeinfo.class
               if typeinfo.optional then
                 kind = string.format("Core::OptionalType<%s>", kind)
               end
-              
-              local param = { 
-                offset = compound_offset, 
-                size = compound_size, 
-                typeinfo = typeinfo, 
-                value = string.format("[%u element(s)]...", length),
-                data = "", 
-                kind = kind, 
-                typeid = typeinfo.type, 
-                name = typeinfo.name, 
+
+              local param = {
+                offset = compound_offset,
+                size = compound_size,
+                typeinfo = typeinfo,
+                value = string.format("{%u elements}", count),
+                data = "",
+                kind = kind,
+                typeid = typeinfo.type,
+                name = typeinfo.name,
                 optional = typeinfo.optional,
                 indent = indent
               }
-            
+
               table.insert(params, index, param)
             end
           else
-            local param = { 
-              offset = compound_offset, 
-              size = compound_size, 
-              typeinfo = typeinfo, 
+            local param = {
+              offset = compound_offset,
+              size = compound_size,
+              typeinfo = typeinfo,
               value = "<unset>",
-              data = "", 
-              kind = typeinfo.class, 
-              typeid = typeinfo.type, 
-              name = typeinfo.name, 
+              data = "",
+              kind = typeinfo.class,
+              typeid = typeinfo.type,
+              name = typeinfo.name,
               optional = typeinfo.optional,
               indent = indent
             }
-          
+
             table.insert(params, index, param)
           end
         end
@@ -774,14 +790,22 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
     elseif label == LABEL_ANNOUNCE then
       interface = payload_buffer(INSTANCE_ID_SIZE + 4, 4):uint()
     end
-    
+
     -- Enumerate instances to give them an alias (name of the interface followed by a counter letter)
     if HAVE_INSTANCE_TAGS and (instance:tonumber() ~= 0) and ((G_INSTANCES[instance_hex] == nil) or (G_INSTANCES[instance_hex]:len() == 0)) then
       local impl = "impl"
 
       if INTERFACES[interface] ~= nil then
-        local idx = INTERFACES[interface]:reverse():find("I::")
-        impl = INTERFACES[interface]:sub(1 - idx)
+        local tidx = INTERFACES[interface]:find("<")
+        local facename
+        if tidx then
+          facename = INTERFACES[interface]:sub(1, tidx-1)
+        else
+          facename = INTERFACES[interface]
+        end
+
+        local idx = facename:reverse():find("I::")
+        impl = facename:sub(1 - idx)
       end
 
       if G_IMPLEMENTATIONS[impl] == nil then
@@ -833,7 +857,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
 
       subtree:add(f_interface, payload_buffer(INSTANCE_ID_SIZE, 4))
       subtree:add(f_method_text, payload_buffer((INSTANCE_ID_SIZE + 4), 1), method_name):append_text(" (" .. tostring(method_no) .. ")")
-      
+
       if method_info ~= nil and method_info.signature ~= nil then
         subtree:add(f_method_signature, payload_buffer((INSTANCE_ID_SIZE + 4), 1), "'" .. method_info.signature .. "'"):set_generated(true)
       end
@@ -843,15 +867,15 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
 
       for _, param in pairs(params) do
         local text = ""
-        
+
         local unset = false
         local kind = param.kind
-        
+
         if param.optional then
           kind = string.format("OptionalType<%s>", kind)
         end
 
-        if param.value then          
+        if param.value then
           if param.name then
             text = ("(" .. kind .. ") " .. param.name .. " = " .. param.value)
 
@@ -865,7 +889,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
               params_text = (params_text .. multiline_text(param.value))
             end
           end
-      
+
           params_text = params_text .. ", "
         else
           unset = true
@@ -882,7 +906,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
               params_text = (params_text .. "<unset>")
             end
           end
-          
+
           params_text = params_text .. ", "
         end
 
@@ -894,7 +918,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       else
         params_text = "<unknown...>"
       end
-      
+
       -- Construct the call line and cache it so it can be used with the return call
       local instance_text = G_INSTANCES[instance_hex]
       if instance_text == nil then
@@ -904,7 +928,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       local call_line = string.format("%s->%s(%s)", instance_text, method_name, params_text)
 
       cols_info = (call_line .. " called")
-      
+
       G_PARAMS[frame] = params
       G_CALL_LINES[frame] = call_line
       G_SIGNATURES[frame] = method_info
@@ -1038,15 +1062,15 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       for _, param in pairs(params) do
         local text = ""
         local kind = param.kind
-        
+
         for i = 1, param.indent do
           text = " " .. text
         end
-      
+
         if param.optional then
           kind = "Core::OptionalType<" .. kind .. ">"
         end
-      
+
         if param.name then
           text = text .. ("(" .. kind .. ") " .. param.name .. " = " .. param.value)
           if param.indent == 0 then
