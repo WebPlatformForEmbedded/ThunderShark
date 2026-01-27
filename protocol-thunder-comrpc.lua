@@ -44,55 +44,70 @@ METHODS = {}
 ENUMS = {}
 
 Type = {
-  STRING = 1,
   CHAR = 2,
   INT8 = 3,
   UINT8 = 4,
   INT16 = 5,
   UINT16 = 6,
-  INT32 = 7,
-  UINT32 = 8,
-  INT64 = 9,
-  UINT64 = 10,
-  INTERFACE = 11,
-  BUFFER8 = 12,
-  BUFFER16 = 13,
-  BUFFER32 = 14,
-  BOOL = 15,
-  ENUM8 = 16,
-  ENUMU8 = 17,
-  ENUM16 = 18,
-  ENUMU16 = 19,
-  ENUM32 = 20,
-  ENUMU32 = 21,
-  ENUM64 = 22,
-  ENUMU64 = 23,
-  OBJECT = 24,
-  HRESULT = 25,
-  POD = 26,
-  FLOAT32 = 27,
-  FLOAT64 = 28
+  INT24 = 7,
+  UINT24 = 8,
+  INT32 = 9,
+  UINT32 = 10,
+  INT64 = 11,
+  UINT64 = 12,
+  INTERFACE = 13,
+  BUFFER8 = 14,
+  BUFFER16 = 15,
+  BUFFER24 = 16,
+  BUFFER32 = 17,
+  BOOL = 18,
+  ENUM8 = 19,
+  ENUMU8 = 20,
+  ENUM16 = 21,
+  ENUMU16 = 22,
+  ENUM32 = 23,
+  ENUMU32 = 24,
+  ENUM64 = 25,
+  ENUMU64 = 26,
+  OBJECT = 27,
+  HRESULT = 28,
+  POD = 29,
+  FLOAT32 = 30,
+  FLOAT64 = 31,
+  STRING8 = 32,
+  STRING16 = 33,
+  STRING24 = 34,
+  STRING32 = 35,
+  MAC = 36,
+  TIME = 37,
+  VECTOR8 = 38,
+  VECTOR16 = 39,
+  VECTOR24 = 40,
+  VECTOR32 = 41,
+  ARRAY = 42,
+  ARRAY8 = 43,
+  ARRAY16 = 44
 }
 
 ERROR_CODES = {
-  [0] = "ERROR_NONE",
-  [1] = "ERROR_GENERAL",
-  [2] = "ERROR_UNAVAILABLE",
-  [3] = "ERROR_ASYNC_FAILED",
-  [5] = "ERROR_ILLEGAL_STATE",
-  [6] = "ERROR_OPENING_FAILED",
-  [11] = "ERROR_TIMEDOUT",
-  [12] = "ERROR_INPROGRESS",
-  [17] = "ERROR_DESCTRUCTION_SUCCEEDED",
-  [18] = "ERROR_DESTRUCTION_FAILED",
-  [19] = "ERROR_CLOSING_FAILED",
-  [22] = "ERROR_UNKNOWN_KEY",
-  [25] = "ERROR_RPC_CALL_FAILED",
-  [29] = "ERROR_DUPLICATE_KEY",
-  [30] = "ERROR_BAD_REQUEST",
-  [36] = "ERROR_ALREADY_RELEASED",
-  [41] = "ERROR_INVALID_DESIGNATOR",
-  [44] = "ERROR_NOT_SUPPORTED"
+  [0] = "Core::ERROR_NONE",
+  [1] = "Core::ERROR_GENERAL",
+  [2] = "Core::ERROR_UNAVAILABLE",
+  [3] = "Core::ERROR_ASYNC_FAILED",
+  [5] = "Core::ERROR_ILLEGAL_STATE",
+  [6] = "Core::ERROR_OPENING_FAILED",
+  [11] = "Core::ERROR_TIMEDOUT",
+  [12] = "Core::ERROR_INPROGRESS",
+  [17] = "Core::ERROR_DESCTRUCTION_SUCCEEDED",
+  [18] = "Core::ERROR_DESTRUCTION_FAILED",
+  [19] = "Core::ERROR_CLOSING_FAILED",
+  [22] = "Core::ERROR_UNKNOWN_KEY",
+  [25] = "Core::ERROR_RPC_CALL_FAILED",
+  [29] = "Core::ERROR_DUPLICATE_KEY",
+  [30] = "Core::ERROR_BAD_REQUEST",
+  [36] = "Core::ERROR_ALREADY_RELEASED",
+  [41] = "Core::ERROR_INVALID_DESIGNATOR",
+  [44] = "Core::ERROR_NOT_SUPPORTED"
 }
 
 -- IUnknown is a well-known interface
@@ -100,9 +115,9 @@ IUNKNOWN = 0
 IUNKNOWN_METHODS = 3
 INTERFACES[IUNKNOWN] = "Core::IUnknown"
 METHODS[IUNKNOWN] = {
-  [0] = { name = "AddRef" },
-  [1] = { name = "Release", retvals = { { type = Type.HRESULT } }, params = { { name = "count", type = Type.UINT32, hide = true } } },
-  [2] = { name = "QueryInterface", retvals = { { type = Type.OBJECT, interface_param = 1 } }, params = { { name = "interface", type = Type.INTERFACE } } }
+  [0] = { name = "AddRef", signature = "virtual uint32_t AddRef() const = 0", retvals = { { type = Type.HRESULT } }},
+  [1] = { name = "Release", signature = "virtual uint32_t Release() const = 0", retvals = { { type = Type.HRESULT } }, params = { { name = "count", type = Type.UINT32, hide = true } } },
+  [2] = { name = "QueryInterface", signature = "virtual void* QueryInterface(const uint32_t) = 0", retvals = { { type = Type.OBJECT, interface_param = 1 } }, params = { { name = "interface", type = Type.INTERFACE } } }
 }
 
 -- Load rest of interface information from the generated data file
@@ -112,6 +127,7 @@ local function cwd()
 end
 
 assert(loadfile(cwd() .. "protocol-thunder-comrpc.data"))(INTERFACES, METHODS, ENUMS, Type)
+assert(GENERATOR_VERSION == 2, "\n\nINCOMPATIBLE DATA FILE!\n\nPlease regenerate the protocol-thunder-comrpc.data file with the latest version of the LuaGenerator script.\n\nhttps://github.com/rdkcentral/ThunderTools\n\n")
 
 -- Protocol definition
 thunder_protocol_tcp = Proto(PROTOCOL_NAME, PROTOCOL_PRETTY_NAME)
@@ -124,36 +140,37 @@ f_frame_request = ProtoField.framenum(FILTER_NAME .. ".frame_request", "Request"
 f_frame_response = ProtoField.framenum(FILTER_NAME .. ".frame_response", "Response", base.NONE, frametype.RESPONSE)
 f_frame_length = ProtoField.uint32(FILTER_NAME .. ".frame_length", "Frame size", base.DEC)
 f_command = ProtoField.uint32(FILTER_NAME .. ".command", "Command", base.HEX)
-f_direction = ProtoField.uint8(FILTER_NAME .. ".direction", "Direction", base.DEC,
-                { [DIRECTION_INBOUND] = "Return", [DIRECTION_OUTBOUND] = "Call" }, 0x1)
+f_direction = ProtoField.uint8(FILTER_NAME .. ".direction", "Direction", base.DEC, { [DIRECTION_INBOUND] = "Response", [DIRECTION_OUTBOUND] = "Request" }, 0x1)
 f_label = ProtoField.uint8(FILTER_NAME .. ".label", "Label", base.DEC, { [LABEL_ANNOUNCE] = "Announce", [LABEL_INVOKE] = "Invoke" }, 0xFE)
 f_instance = ProtoField.uint64(FILTER_NAME .. ".instance", "Instance", base.HEX)
 f_instance_tag = ProtoField.string(FILTER_NAME .. ".instance_tag", "Instance tag", base.ASCII)
 f_interface = ProtoField.uint32(FILTER_NAME .. ".interface", "Interface", base.HEX, INTERFACES)
 f_payload_size = ProtoField.uint32(FILTER_NAME .. ".payload_size", "Payload size", base.DEC)
 -- Announce only
-f_process_id = ProtoField.uint32(FILTER_NAME .. ".announce.id", "ID", base.DEC)
-f_exchange_id = ProtoField.uint32(FILTER_NAME .. ".announce.exchangeid", "Exchange ID", base.HEX)
-f_version = ProtoField.uint32(FILTER_NAME .. ".announce.version", "Version", base.HEX)
+f_process_id = ProtoField.uint32(FILTER_NAME .. ".announce.id", "PID", base.DEC)
+f_exchange_id = ProtoField.uint32(FILTER_NAME .. ".announce.exchangeid", "Exchange ID", base.HEX_DEC)
+f_version = ProtoField.uint32(FILTER_NAME .. ".announce.version", "Version", base.HEX_DEC)
 f_class = ProtoField.string(FILTER_NAME .. ".announce.class", "Class", base.ASCII)
 f_callsign = ProtoField.string(FILTER_NAME .. ".announce.callsign", "Callsign", base.ASCII)
 f_kind = ProtoField.uint8(FILTER_NAME .. ".announce.kind", "Kind", base.DEC,
-            { [ANNOUNCE_KIND_ACQUIRE] = "Acquire", [ANNOUNCE_KIND_OFFER] = "Offer", [ANNOUNCE_KIND_REVOKE] = "Revoke", [ANNOUNCE_KIND_REQUEST] = "Request" } )
-f_sequence = ProtoField.uint8(FILTER_NAME .. ".announce.sequence", "Sequence", base.DEC)
+            { [ANNOUNCE_KIND_ACQUIRE] = "Acquire", [ANNOUNCE_KIND_OFFER] = "Offer", [ANNOUNCE_KIND_REVOKE] = "Revoke", [ANNOUNCE_KIND_REQUEST] = "Requested" } )
+f_sequence = ProtoField.uint32(FILTER_NAME .. ".announce.sequence", "Sequence", base.HEX_DEC)
 f_settings = ProtoField.string(FILTER_NAME .. ".announce.settings", "Settings", base.ASCII)
 -- Invoke only
 f_method = ProtoField.uint8(FILTER_NAME .. ".invoke.method", "Method", base.DEC)
 f_method_text = ProtoField.string(FILTER_NAME .. ".invoke.method_text", "Method", base.ASCII)
+f_method_signature = ProtoField.string(FILTER_NAME .. ".invoke.method_signature", "Signature", base.ASCII)
 f_return_values = ProtoField.string(FILTER_NAME .. ".invoke.return_values", "Return value", base.ASCII)
 f_parameters = ProtoField.string(FILTER_NAME .. ".invoke.parameters", "Parameter", base.ASCII)
 f_call_duration = ProtoField.string(FILTER_NAME .. ".invoke.call_duration", "Call duration", base.ASCII)
 f_cached_addref = ProtoField.string(FILTER_NAME .. ".invoke.cached_addref", "Cached AddRef", base.ASCII)
 f_cached_release = ProtoField.string(FILTER_NAME .. ".invoke.cached_release", "Cached Release", base.ASCII)
-f_hresult = ProtoField.uint32(FILTER_NAME .. ".invoke.hresult", "hresult", base.DEC)
+f_hresult = ProtoField.uint32(FILTER_NAME .. ".invoke.hresult", "hresult", base.HEX_DEC, ERROR_CODES)
+f_qi_result = ProtoField.uint64(FILTER_NAME .. ".invoke.queryinterface_result", "QueryInterface result", base.HEX)
 
 thunder_protocol_tcp.fields = { f_source_process, f_dest_process, f_frame_request, f_frame_response, f_frame_length, f_command, f_direction,
   f_label, f_instance, f_instance_tag, f_interface, f_process_id, f_exchange_id, f_version, f_class, f_callsign, f_kind, f_sequence, f_settings,
-  f_method, f_method_text, f_return_values, f_parameters, f_call_duration, f_payload_size, f_cached_addref, f_cached_release, f_hresult }
+  f_method, f_method_text, f_method_signature, f_return_values, f_parameters, f_call_duration, f_payload_size, f_cached_addref, f_cached_release, f_hresult, f_qi_result }
 
 -- Protocol's preferences
 local instance_id_size_tab = { { 1, "8-bit", 1 }, { 2, "16-bit", 2 }, { 3, "32-bit", 4 }, { 2, "64-bit", 8 } }
@@ -231,7 +248,7 @@ local function reset()
     print(string.format("COM-RPC server '%s' on port %u", process, port))
   end
 
-  SIZE_FOLLOWS = 0
+  SIZE_FOLLOWS = -1
 
   TypeInfo = {
     [Type.CHAR] =       { size=1, kind="char" },
@@ -241,13 +258,19 @@ local function reset()
     [Type.UINT16] =     { size=2, kind="uint16_t", signed=false },
     [Type.INT32] =      { size=4, kind="int32_t", signed=true },
     [Type.UINT32] =     { size=4, kind="uint32_t", signed=false },
+    [Type.INT24] =      { size=3, kind="Core::Int24", signed=true },
+    [Type.UINT24] =     { size=3, kind="Core::UInt24", signed=false },
     [Type.INT64] =      { size=8, kind="int64_t", signed=true },
     [Type.UINT64] =     { size=8, kind="uint64_t", signed=false },
-    [Type.STRING] =     { size=SIZE_FOLLOWS, kind="string", length=2 },
+    [Type.STRING8] =    { size=SIZE_FOLLOWS, kind="string", length=1 },
+    [Type.STRING16] =   { size=SIZE_FOLLOWS, kind="string", length=2 },
+    [Type.STRING24] =   { size=SIZE_FOLLOWS, kind="string", length=3 },
+    [Type.STRING32] =   { size=SIZE_FOLLOWS, kind="string", length=4 },
     [Type.INTERFACE] =  { size=4, kind="interface_id" },
     [Type.BOOL] =       { size=1, kind="bool" },
     [Type.BUFFER8] =    { size=SIZE_FOLLOWS, kind="buffer", length=1 },
     [Type.BUFFER16] =   { size=SIZE_FOLLOWS, kind="buffer", length=2 },
+    [Type.BUFFER24] =   { size=SIZE_FOLLOWS, kind="buffer", length=3 },
     [Type.BUFFER32] =   { size=SIZE_FOLLOWS, kind="buffer", length=4 },
     [Type.ENUM8] =      { size=1, kind="enum", signed=true },
     [Type.ENUMU8] =     { size=1, kind="enum", signed=false },
@@ -259,9 +282,18 @@ local function reset()
     [Type.ENUMU64] =    { size=8, kind="enum", signed=false },
     [Type.OBJECT] =     { size=INSTANCE_ID_SIZE, kind="object" },
     [Type.HRESULT] =    { size=4, kind="hresult", signed=false },
-    [Type.POD] =        { size=0, kind="POD" },
+    [Type.POD] =        { size=0, kind="pod" },
     [Type.FLOAT32] =    { size=4, kind="float" },
-    [Type.FLOAT64] =    { size=8, kind="double" }
+    [Type.FLOAT64] =    { size=8, kind="double" },
+    [Type.MAC] =        { size=SIZE_FOLLOWS, kind="Core::MACAddress", length=1 },
+    [Type.TIME] =       { size=8, kind="Core::Time" },
+    [Type.VECTOR8] =    { size=SIZE_FOLLOWS, kind="vector", length=1 },
+    [Type.VECTOR16] =   { size=SIZE_FOLLOWS, kind="vector", length=2 },
+    [Type.VECTOR24] =   { size=SIZE_FOLLOWS, kind="vector", length=3 },
+    [Type.VECTOR32] =   { size=SIZE_FOLLOWS, kind="vector", length=4 },
+    [Type.ARRAY] =      { size=0, kind="array", length = 0 },
+    [Type.ARRAY8] =     { size=SIZE_FOLLOWS, kind="array", length = 1 },
+    [Type.ARRAY16] =    { size=SIZE_FOLLOWS, kind="array", length = 2 }
   }
 end
 
@@ -312,10 +344,10 @@ local function parameter(typeinfo, buffer, is_ret_val)
   local data_number = 0
 
   if typeinfo.optional then
-    present = buffer(0,1):uint()
+    local present = buffer(0,1):uint()
 
     if (present == 0) then
-      return 1, value, data_number, kind, typeid, name, true
+      return 1, "<unset>", data_number, kind, typeid, name, true
     end
 
     buffer = buffer(1, buffer:len()-1)
@@ -337,7 +369,7 @@ local function parameter(typeinfo, buffer, is_ret_val)
       data = data_buffer:uint64()
     end
 
-    data_hex = data:tohex():sub(-INSTANCE_ID_SIZE*2)
+    data_hex = data:tohex(INSTANCE_ID_SIZE*2, ':')
     data_number = data:tonumber()
 
     if signed ~= nil then
@@ -346,11 +378,11 @@ local function parameter(typeinfo, buffer, is_ret_val)
 
       -- Add extra information if it's an enum or hresult
       if TypeInfo[typeid].kind == "enum" then
-        if typeinfo.enum then
-          kind = (kind .. " " .. typeinfo.enum)
+        if typeinfo.class then
+          kind = (kind .. " " .. typeinfo.class)
 
-          if ENUMS[typeinfo.enum] and (size <= 4) then
-            value = (value .. " '" .. ENUMS[typeinfo.enum][data_number] .. "'")
+          if ENUMS[typeinfo.class] and (size <= 4) then
+            value = (value .. " '" .. ENUMS[typeinfo.class][data_number] .. "'")
           end
         end
 
@@ -402,8 +434,23 @@ local function parameter(typeinfo, buffer, is_ret_val)
         value = ("0x" .. data_hex)
       end
 
-    elseif typeid == Type.STRING then
+    elseif typeid == Type.MAC then
+      assert(TypeInfo[typeid].size == SIZE_FOLLOWS)
+      local length = TypeInfo[typeid].length
+      assert(buffer:len() >= length)
+      local mac_size = buffer(0, length):uint()
+      assert(buffer:len() >= length + mac_size)
+      mac = buffer(length, mac_size):bytes()
+      value = mac:tohex(true, ':')
+      size = (length + mac_size)
+
+    elseif typeid == Type.TIME then
+      nstime = NSTime(data_number//1000000, (data_number % 1000000) * 1000)
+      value = string.format("%s (%u microseconds since epoch)", format_date(nstime:tonumber()), data_number)
+
+    elseif (typeid == Type.STRING8) or (typeid == Type.STRING16) or (typeid == Type.STRING24) or (typeid == Type.STRING32) then
       -- Here length comes from the wire
+      assert(TypeInfo[typeid].size == SIZE_FOLLOWS)
       local length = TypeInfo[typeid].length
       assert(buffer:len() >= length)
       local string_size = buffer(0, length):uint()
@@ -414,11 +461,12 @@ local function parameter(typeinfo, buffer, is_ret_val)
       else
         value = "\"\""
       end
+
       size = (length + string_size)
 
-    elseif (typeid == Type.BUFFER8) or (typeid == Type.BUFFER16) or (typeid == Type.BUFFER32) then
-
+    elseif (typeid == Type.BUFFER8) or (typeid == Type.BUFFER16) or (typeid == Type.BUFFER24) or (typeid == Type.BUFFER32) then
       -- Here also length comes from the wire
+      assert(TypeInfo[typeid].size == SIZE_FOLLOWS)
       local length = TypeInfo[typeid].length
       assert(buffer:len() >= length)
       local buffer_size = buffer(0, length):uint()
@@ -442,33 +490,161 @@ local function parameter(typeinfo, buffer, is_ret_val)
 end
 
 -- Creates a table of strings representing the method's parameters (or return values)
-local function method_dissect_params(param_list, buffer, is_ret_val)
+local function method_dissect_params(param_list, start_offset, indent, buffer, is_ret_val)
   local params = {}
   local offset = 0
 
   if buffer and param_list then
-    for _, typeinfo in pairs(param_list) do
+    for _, typeinfo in ipairs(param_list) do
 
       if typeinfo.length == nil then
-        local size = 0
+        assert(typeinfo.type, _)
 
-        if typeinfo.type ~= Type.POD then
+        local size = 0
+        local kind = TypeInfo[typeinfo.type].kind
+
+        if (kind ~= "pod") and (kind ~= "array") and (kind ~= "vector") then
           local size, value, data, kind, typeid, name, optional = parameter(typeinfo, buffer(offset, buffer:len() - offset), is_ret_val)
 
-          table.insert(params, { offset=offset, size=size, typeinfo=typeinfo, value=value, data=data, kind=kind, typeid=typeid, name=name })
+          local param = {
+            offset = (start_offset + offset),
+            size = size,
+            typeinfo = typeinfo,
+            value = value,
+            data = data,
+            kind = kind,
+            typeid = typeid,
+            name = name,
+            optional = optional,
+            indent = indent
+          }
+
+          table.insert(params, param)
 
           offset = (offset + size)
 
         else
-          -- Recursively dissect PODs..
-          local pod_params, pod_size = method_dissect_params(typeinfo.pod, buffer(offset, buffer:len() - offset), is_ret_val)
+          local present = true
+          local compound_offset = (start_offset + offset)
+          local compound_size = 0
 
-          for _, val in pairs(pod_params) do
-            val.name = typeinfo.name .. "." .. val.name
-            table.insert(params, val)
+          if typeinfo.optional then
+            local p = buffer(0,1):uint()
+
+            if (p == 0) then
+              present = false
+            end
+
+            buffer = buffer(1, buffer:len()-1)
+            offset = offset + 1
+            compound_size = 1
           end
 
-          offset = (offset + size)
+          if present then
+            if kind == "pod" then
+              -- Recursively dissect PODs...
+              local pod_params, pod_size = method_dissect_params(typeinfo.element, (start_offset + offset), (indent + 2), buffer(offset, buffer:len() - offset), is_ret_val)
+
+              local index = (#params + 1)
+
+              for _, val in ipairs(pod_params) do
+                val.name = (typeinfo.name .. "." .. val.name)
+                table.insert(params, val)
+              end
+
+              local kind = "struct " .. typeinfo.class
+
+              compound_size = compound_size + pod_size
+
+              local param = {
+                offset = compound_offset,
+                size = compound_size,
+                typeinfo = typeinfo,
+                value = string.format("{%u elements}", #pod_params),
+                data = "",
+                kind = kind,
+                typeid = Type.POD,
+                name = typeinfo.name,
+                optional = typeinfo.optional,
+                indent = indent
+              }
+
+              table.insert(params, index, param)
+              offset = (offset + pod_size)
+
+            elseif (kind == "array") or (kind == "vector") then
+              local length = TypeInfo[typeinfo.type].length
+              local index = (#params + 1)
+              local array_size = length
+
+              local count = 0
+              if length == 0 then
+                -- Fixed array, take length from data file
+                assert(TypeInfo[typeinfo.type].size == 0)
+                count = typeinfo.count
+                assert(count ~= 0)
+              else
+                assert(TypeInfo[typeinfo.type].size == SIZE_FOLLOWS)
+                count = buffer(offset, length):uint()
+              end
+
+              offset = (offset + length)
+
+              for index = 1, count do
+                local element, element_size = method_dissect_params({typeinfo.element}, start_offset + offset, (indent + 2), buffer(offset, buffer:len() - offset), is_ret_val)
+
+                for _, val in ipairs(element) do
+                  if val.name then
+                    val.name = string.format("%s[%s].%s", typeinfo.name, (index - 1), val.name)
+                  else
+                    val.name = string.format("%s[%s]", typeinfo.name, (index - 1))
+                  end
+
+                  table.insert(params, val)
+
+                  offset = (offset + element_size)
+                  array_size = array_size + element_size
+                end
+              end
+
+              compound_size = compound_size + array_size
+
+              local kind = typeinfo.class
+              if typeinfo.optional then
+                kind = string.format("Core::OptionalType<%s>", kind)
+              end
+
+              local param = {
+                offset = compound_offset,
+                size = compound_size,
+                typeinfo = typeinfo,
+                value = string.format("{%u elements}", count),
+                data = "",
+                kind = kind,
+                typeid = typeinfo.type,
+                name = typeinfo.name,
+                optional = typeinfo.optional,
+                indent = indent
+              }
+
+              table.insert(params, index, param)
+            end
+          else
+            local param = {
+              offset = compound_offset,
+              size = compound_size,
+              typeinfo = typeinfo,
+              value = "<unset>",
+              data = "",
+              kind = typeinfo.class,
+              typeid = typeinfo.type,
+              name = typeinfo.name,
+              optional = typeinfo.optional,
+              indent = indent
+            }
+
+            table.insert(params, index, param)
+          end
         end
       end
     end
@@ -487,7 +663,7 @@ local function method_params(signature, buffer)
     name = signature.name
 
     if signature.params then
-      params, size = method_dissect_params(signature.params, buffer, false)
+      params, size = method_dissect_params(signature.params, 0, 0, buffer, false)
     end
   end
 
@@ -512,7 +688,7 @@ local function method_return_value(signature, buffer, input_params)
     name = signature.name
 
     if signature.retvals then
-      params, size = method_dissect_params(signature.retvals, buffer, true)
+      params, size = method_dissect_params(signature.retvals, 0, 0, buffer, true)
     end
   end
 
@@ -578,9 +754,9 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
   -- Create the subtree for this protocol
   local headline = "Thunder COM-RPC Protocol,"
   if direction == DIRECTION_OUTBOUND then
-    headline = headline .. " outbound message"
+    headline = headline .. " request message"
   else
-    headline = headline .. " inbound message"
+    headline = headline .. " response message"
   end
 
   local subtree = tree:add(thunder_protocol_tcp, buffer(), headline)
@@ -620,8 +796,16 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       local impl = "impl"
 
       if INTERFACES[interface] ~= nil then
-        local idx = INTERFACES[interface]:reverse():find("I::")
-        impl = INTERFACES[interface]:sub(1 - idx)
+        local tidx = INTERFACES[interface]:find("<")
+        local facename
+        if tidx then
+          facename = INTERFACES[interface]:sub(1, tidx-1)
+        else
+          facename = INTERFACES[interface]
+        end
+
+        local idx = facename:reverse():find("I::")
+        impl = facename:sub(1 - idx)
       end
 
       if G_IMPLEMENTATIONS[impl] == nil then
@@ -674,14 +858,19 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       subtree:add(f_interface, payload_buffer(INSTANCE_ID_SIZE, 4))
       subtree:add(f_method_text, payload_buffer((INSTANCE_ID_SIZE + 4), 1), method_name):append_text(" (" .. tostring(method_no) .. ")")
 
+      if method_info ~= nil and method_info.signature ~= nil then
+        subtree:add(f_method_signature, payload_buffer((INSTANCE_ID_SIZE + 4), 1), "'" .. method_info.signature .. "'"):set_generated(true)
+      end
+
       -- Build params list
       local params_text = ""
 
       for _, param in pairs(params) do
         local text = ""
 
-        unset = false
-        kind = param.kind
+        local unset = false
+        local kind = param.kind
+
         if param.optional then
           kind = string.format("OptionalType<%s>", kind)
         end
@@ -690,13 +879,13 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
           if param.name then
             text = ("(" .. kind .. ") " .. param.name .. " = " .. param.value)
 
-            if not param.typeinfo.hide then
+            if not param.typeinfo.hide and param.indent ==0 then
               params_text = (params_text .. param.name .. "=" .. multiline_text(param.value))
             end
           else
             text = ("(" .. kind .. ") " .. param.value)
 
-            if not param.typeinfo.hide then
+            if not param.typeinfo.hide and param.indent == 0 then
               params_text = (params_text .. multiline_text(param.value))
             end
           end
@@ -707,13 +896,13 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
           if param.name then
             text = ("(" .. kind .. ") " .. param.name .. " <unset>")
 
-            if not param.typeinfo.hide then
+            if not param.typeinfo.hide and param.indent == 0 then
               params_text = (params_text .. param.name .. "=<unset>")
             end
           else
             text = ("(" .. kind .. ") ")
 
-            if not param.typeinfo.hide then
+            if not param.typeinfo.hide and param.indent == 0 then
               params_text = (params_text .. "<unset>")
             end
           end
@@ -833,7 +1022,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       elseif kind == ANNOUNCE_KIND_REVOKE then
         cols_info = string.format("REVOKE, interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       elseif kind == ANNOUNCE_KIND_REQUEST then
-        cols_info = string.format("Channel open, REQUEST, interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
+        cols_info = string.format("Channel open, REQUESTED, interface %s, instance 0x%s '%s'", interface_text, instance_hex, G_INSTANCES[instance_hex])
       end
 
       -- Done with the announce message, advance...
@@ -855,7 +1044,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
 
     -- We always know the request frame
     subtree:add(f_frame_request, buffer(0,0), G_REQUESTS[frame]):set_text("This is a response to the COM-RPC call in frame: " .. G_REQUESTS[frame]):set_generated(true)
-    subtree:add(f_call_duration, buffer(0,0), duration):set_text(string.format("Time elapsed since invoke: %s seconds", duration)):set_generated(true)
+    subtree:add(f_call_duration, buffer(0,0), duration):set_text(string.format("Time elapsed since call: %s seconds", duration)):set_generated(true)
 
     if label == LABEL_INVOKE then
       local return_value_buffer = nil
@@ -868,21 +1057,40 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
 
       local params_text = ""
       local hresult = nil
+      local qi_result = nil
 
       for _, param in pairs(params) do
         local text = ""
+        local kind = param.kind
+
+        for i = 1, param.indent do
+          text = " " .. text
+        end
+
+        if param.optional then
+          kind = "Core::OptionalType<" .. kind .. ">"
+        end
 
         if param.name then
-          text = ("(" .. param.kind .. ") " .. param.name .. " = " .. param.value)
-          params_text = (params_text .. param.name .. "=" .. multiline_text(param.value) .. ", ")
+          text = text .. ("(" .. kind .. ") " .. param.name .. " = " .. param.value)
+          if param.indent == 0 then
+            params_text = (params_text .. param.name .. " = " .. multiline_text(param.value) .. ", ")
+          end
         else
-          text = ("(" .. param.kind .. ") " .. param.value)
-          params_text = (params_text .. multiline_text(param.value) .. ", ")
+          text = text .. ("(" .. kind .. ") " .. param.value)
+          if param.indent == 0 then
+            params_text = (params_text .. multiline_text(param.value) .. ", ")
+          end
         end
 
         if hresult == nil and param.typeid == Type.HRESULT then
           hresult = payload_buffer(param.offset, param.size):uint()
           subtree:add(f_hresult, payload_buffer(param.offset, param.size)):set_generated(true)
+        end
+
+        if qi_result == nil and param.typeid == Type.OBJECT then
+          qi_result = payload_buffer(param.offset, param.size):uint64()
+          subtree:add(f_qi_result, payload_buffer(param.offset, param.size)):set_hidden(true)
         end
 
         subtree:add(f_return_values, payload_buffer(param.offset, param.size), text)
@@ -903,7 +1111,7 @@ local function thunder_protocol_pdu_dissector(buffer, pinfo, tree)
       if signature then
         local overlay_offset = size
         while overlay_offset < payload_size do
-          assert(payload_buffer:len() >= (INSTANCE_ID_SIZE + 4 + 4))
+          assert(payload_buffer:len() >= (INSTANCE_ID_SIZE + 4 + 1))
           local instance = payload_buffer(overlay_offset, INSTANCE_ID_SIZE):uint64()
           local instance_hex = instance:tohex():sub(-INSTANCE_ID_SIZE*2)
           local id = payload_buffer((overlay_offset + INSTANCE_ID_SIZE), 4):uint()
@@ -1061,7 +1269,7 @@ function thunder_protocol_tcp.dissector(buffer, pinfo, tree)
 
   -- Want to color the errors?
   if HAVE_ERRORS_MARKED then
-    set_color_filter_slot(1, FILTER_NAME .. ".invoke.hresult != 0")
+    set_color_filter_slot(1, "(" .. FILTER_NAME .. ".invoke.hresult != 0 and " .. FILTER_NAME .. ".invoke.hresult != 17) or " ..FILTER_NAME .. ".invoke.queryinterface_result == 0")
   end
 end
 
